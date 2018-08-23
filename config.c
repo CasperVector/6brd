@@ -237,13 +237,7 @@ static void close_interface(struct interface *iface)
 {
 	if (iface->head.next)
 		list_del(&iface->head);
-
-	router_setup_interface(iface, false);
-	dhcpv6_setup_interface(iface, false);
 	ndp_setup_interface(iface, false);
-#ifdef DHCPV4_SUPPORT
-	dhcpv4_setup_interface(iface, false);
-#endif
 
 	clean_interface(iface);
 	free(iface->addr4);
@@ -431,11 +425,6 @@ int config_parse_interface(void *data, size_t len, const char *name, bool overwr
 		else if ((c = tb[IFACE_ATTR_NETWORKID]))
 			ifname = blobmsg_get_string(c);
 	}
-
-#ifdef WITH_UBUS
-	if (overwrite || !iface->ifname)
-		ifname = ubus_get_ifname(name);
-#endif
 
 	if (!iface->ifname && !ifname)
 		goto err;
@@ -794,10 +783,6 @@ void odhcpd_reload(void)
 		free(path);
 	}
 
-#ifdef WITH_UBUS
-	ubus_apply_network();
-#endif
-
 	bool any_dhcpv6_slave = false, any_ra_slave = false, any_ndp_slave = false;
 
 	/* Test for */
@@ -821,10 +806,6 @@ void odhcpd_reload(void)
 			continue;
 
 		enum odhcpd_mode hybrid_mode = MODE_DISABLED;
-#ifdef WITH_UBUS
-		if (!ubus_has_prefix(i->name, i->ifname))
-			hybrid_mode = MODE_RELAY;
-#endif
 
 		if (i->dhcpv6 == MODE_HYBRID)
 			i->dhcpv6 = hybrid_mode;
@@ -864,12 +845,7 @@ void odhcpd_reload(void)
 				i->ndp = (master && master->ndp == MODE_RELAY) ?
 						MODE_RELAY : MODE_DISABLED;
 
-			router_setup_interface(i, !i->ignore || i->ra != MODE_DISABLED);
-			dhcpv6_setup_interface(i, !i->ignore || i->dhcpv6 != MODE_DISABLED);
 			ndp_setup_interface(i, !i->ignore || i->ndp != MODE_DISABLED);
-#ifdef DHCPV4_SUPPORT
-			dhcpv4_setup_interface(i, !i->ignore || i->dhcpv4 != MODE_DISABLED);
-#endif
 		} else
 			close_interface(i);
 	}
@@ -908,11 +884,6 @@ void odhcpd_run(void)
 	signal(SIGTERM, handle_signal);
 	signal(SIGINT, handle_signal);
 	signal(SIGHUP, handle_signal);
-
-#ifdef WITH_UBUS
-	while (ubus_init())
-		sleep(1);
-#endif
 
 	odhcpd_reload();
 	uloop_run();

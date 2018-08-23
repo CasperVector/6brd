@@ -29,7 +29,6 @@
 #include <linux/filter.h>
 #include <linux/neighbour.h>
 
-#include "dhcpv6.h"
 #include "odhcpd.h"
 
 

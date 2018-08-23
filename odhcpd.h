@@ -291,15 +291,6 @@ bool odhcpd_bitlen2netmask(bool v6, unsigned int bits, void *mask);
 
 int config_parse_interface(void *data, size_t len, const char *iname, bool overwrite);
 
-#ifdef WITH_UBUS
-int ubus_init(void);
-const char* ubus_get_ifname(const char *name);
-void ubus_apply_network(void);
-bool ubus_has_prefix(const char *name, const char *ifname);
-void ubus_bcast_dhcp_event(const char *type, const uint8_t *mac, const size_t mac_len,
-		const struct in_addr *addr, const char *name, const char *interface);
-#endif
-
 int netlink_add_netevent_handler(struct netevent_handler *hdlr);
 ssize_t netlink_get_interface_addrs(const int ifindex, bool v6,
 		struct odhcpd_ipaddr **addrs);
@@ -315,16 +306,7 @@ void netlink_dump_addr_table(const bool v6);
 
 // Exported module initializers
 int netlink_init(void);
-int router_init(void);
-int dhcpv6_init(void);
 int ndp_init(void);
-#ifdef DHCPV4_SUPPORT
-int dhcpv4_init(void);
-
-int dhcpv4_setup_interface(struct interface *iface, bool enable);
-#endif
-int router_setup_interface(struct interface *iface, bool enable);
-int dhcpv6_setup_interface(struct interface *iface, bool enable);
 int ndp_setup_interface(struct interface *iface, bool enable);
 
 void odhcpd_reload(void);

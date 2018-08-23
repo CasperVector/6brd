@@ -104,19 +104,8 @@ int main(int argc, char **argv)
 	if (netlink_init())
 		return 4;
 
-	if (router_init())
-		return 4;
-
-	if (dhcpv6_init())
-		return 4;
-
 	if (ndp_init())
 		return 4;
-
-#ifdef DHCPV4_SUPPORT
-	if (dhcpv4_init())
-		return 4;
-#endif
 
 	odhcpd_run();
 	return 0;
