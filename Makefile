@@ -1,5 +1,5 @@
 INCS = -I/usr/include/libnl3
-LIBS = -lnl-3 -lresolv -lubox -luci
+LIBS = -lnl-3 -lubox -luci
 CPPFLAGS = -D_GNU_SOURCE ${INCS}
 CFLAGS = -pipe -g -Wall -Wextra -O2
 

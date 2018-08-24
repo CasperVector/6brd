@@ -222,21 +222,14 @@ static void ndp_netevent_cb(unsigned long event, struct netevent_handler_info *i
 		return;
 
 	switch (event) {
-	case NETEV_ADDR6_DEL:
-		add = false;
-		netlink_dump_neigh_table(false);
-		/* fall through */
-	case NETEV_ADDR6_ADD:
-		setup_addr_for_relaying(&info->addr.in6, iface, add);
-		break;
 	case NETEV_NEIGH6_DEL:
 		add = false;
 		/* fall through */
 	case NETEV_NEIGH6_ADD:
 		if (info->neigh.flags & NTF_PROXY) {
 			if (add) {
-				netlink_setup_proxy_neigh(&info->neigh.dst.in6, iface->ifindex, false);
-				setup_route(&info->neigh.dst.in6, iface, false);
+				netlink_setup_proxy_neigh (&info->neigh.dst, iface->ifindex, false);
+				setup_route (&info->neigh.dst, iface, false);
 				netlink_dump_neigh_table(false);
 			}
 			break;
@@ -247,8 +240,8 @@ static void ndp_netevent_cb(unsigned long event, struct netevent_handler_info *i
 		      (NUD_REACHABLE|NUD_STALE|NUD_DELAY|NUD_PROBE|NUD_PERMANENT|NUD_NOARP)))
 			break;
 
-		setup_addr_for_relaying(&info->neigh.dst.in6, iface, add);
-		setup_route(&info->neigh.dst.in6, iface, add);
+		setup_addr_for_relaying (&info->neigh.dst, iface, add);
+		setup_route (&info->neigh.dst, iface, add);
 
 		if (!add)
 			netlink_dump_neigh_table(false);
