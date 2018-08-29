@@ -29,7 +29,7 @@
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 
-#include <libubox/uloop.h>
+#include "uloop.h"
 #include "odhcpd.h"
 
 struct config config = { .log_level = LOG_ERR };

@@ -31,7 +31,7 @@
 #include <linux/filter.h>
 #include <linux/neighbour.h>
 
-#include <libubox/uloop.h>
+#include "uloop.h"
 #include "odhcpd.h"
 
 static void setup_route(struct in6_addr *addr, struct interface *iface, int add);
