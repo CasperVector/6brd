@@ -34,10 +34,9 @@
 #include <libubox/uloop.h>
 #include "odhcpd.h"
 
-static void setup_route(struct in6_addr *addr, struct interface *iface, bool add);
-static void setup_addr_for_relaying(struct in6_addr *addr, struct interface *iface, bool add);
-static void handle_solicit(void *addr, void *data, size_t len,
-		struct interface *iface, void *dest);
+static void setup_route(struct in6_addr *addr, struct interface *iface, int add);
+static void setup_addr_for_relaying(struct in6_addr *addr, struct interface *iface, int add);
+static void handle_solicit(void *addr, void *data, size_t len, struct interface *iface);
 
 static int ping_socket = -1;
 
@@ -108,10 +107,10 @@ out:
 	return ret;
 }
 
-int ndp_setup_interface(struct interface *iface, bool enable)
+int ndp_setup_interface(struct interface *iface, int enable)
 {
 	int ret = 0, procfd;
-	bool dump_neigh = false;
+	int dump_neigh = 0;
 	char procbuf[64];
 
 	snprintf(procbuf, sizeof(procbuf), "/proc/sys/net/ipv6/conf/%s/proxy_ndp", iface->ifname);
@@ -127,7 +126,7 @@ int ndp_setup_interface(struct interface *iface, bool enable)
 		close(iface->ndp_event.uloop.fd);
 		iface->ndp_event.uloop.fd = -1;
 		if (!enable && write (procfd, "0\n", 2) < 0) {}
-		dump_neigh = true;
+		dump_neigh = 1;
 	}
 
 	if (enable) {
@@ -188,13 +187,13 @@ int ndp_setup_interface(struct interface *iface, bool enable)
 
 		/* If we already were enabled dump is unnecessary, if not do dump */
 		if (!dump_neigh)
-			netlink_dump_neigh_table(false);
+			netlink_dump_neigh_table(0);
 		else
-			dump_neigh = false;
+			dump_neigh = 0;
 	}
 
 	if (dump_neigh)
-		netlink_dump_neigh_table(true);
+		netlink_dump_neigh_table(1);
 
  out:
 	if (ret < 0 && iface->ndp_event.uloop.fd > 0) {
@@ -211,20 +210,20 @@ int ndp_setup_interface(struct interface *iface, bool enable)
 void ndp_netevent_cb (unsigned long event, struct netevent_handler_info *info)
 {
 	struct interface *iface = info->iface;
-	bool add = true;
+	int add = 1;
 
 	if (!iface) return;
 
 	switch (event) {
 	case NETEV_NEIGH6_DEL:
-		add = false;
+		add = 0;
 		/* fall through */
 	case NETEV_NEIGH6_ADD:
 		if (info->neigh.flags & NTF_PROXY) {
 			if (add) {
-				netlink_setup_proxy_neigh (&info->neigh.dst, iface->ifindex, false);
-				setup_route (&info->neigh.dst, iface, false);
-				netlink_dump_neigh_table(false);
+				netlink_setup_proxy_neigh (&info->neigh.dst, iface->ifindex, 0);
+				setup_route (&info->neigh.dst, iface, 0);
+				netlink_dump_neigh_table(0);
 			}
 			break;
 		}
@@ -238,7 +237,7 @@ void ndp_netevent_cb (unsigned long event, struct netevent_handler_info *info)
 		setup_route (&info->neigh.dst, iface, add);
 
 		if (!add)
-			netlink_dump_neigh_table(false);
+			netlink_dump_neigh_table(0);
 		break;
 	default:
 		break;
@@ -258,14 +257,13 @@ static void ping6(struct in6_addr *addr,
 	inet_ntop(AF_INET6, addr, ipbuf, sizeof(ipbuf));
 	syslog(LOG_NOTICE, "Pinging for %s%%%s", ipbuf, iface->ifname);
 
-	netlink_setup_route(addr, 128, iface->ifindex, NULL, 128, true);
+	netlink_setup_route(addr, 128, iface->ifindex, NULL, 128, 1);
 	odhcpd_send(ping_socket, &dest, &iov, 1, iface);
-	netlink_setup_route(addr, 128, iface->ifindex, NULL, 128, false);
+	netlink_setup_route(addr, 128, iface->ifindex, NULL, 128, 0);
 }
 
 /* Handle solicitations */
-static void handle_solicit(void *addr, void *data, size_t len,
-		struct interface *iface, _unused void *dest)
+static void handle_solicit(void *addr, void *data, size_t len, struct interface *iface)
 {
 	struct ip6_hdr *ip6 = data;
 	struct nd_neighbor_solicit *req = (struct nd_neighbor_solicit*)&ip6[1];
@@ -274,7 +272,7 @@ static void handle_solicit(void *addr, void *data, size_t len,
 	uint8_t mac[6];
 
 	/* Solicitation is for duplicate address detection */
-	bool ns_is_dad = IN6_IS_ADDR_UNSPECIFIED(&ip6->ip6_src);
+	int ns_is_dad = IN6_IS_ADDR_UNSPECIFIED(&ip6->ip6_src);
 
 	/* Don't forward any non-DAD solicitation for external ifaces
 	 * TODO: check if we should even forward DADs for them */
@@ -303,7 +301,7 @@ static void handle_solicit(void *addr, void *data, size_t len,
 }
 
 /* Use rtnetlink to modify kernel routes */
-static void setup_route(struct in6_addr *addr, struct interface *iface, bool add)
+static void setup_route(struct in6_addr *addr, struct interface *iface, int add)
 {
 	char ipbuf[INET6_ADDRSTRLEN];
 
@@ -317,7 +315,7 @@ static void setup_route(struct in6_addr *addr, struct interface *iface, bool add
 		netlink_setup_route(addr, 128, iface->ifindex, NULL, 1024, add);
 }
 
-static void setup_addr_for_relaying(struct in6_addr *addr, struct interface *iface, bool add)
+static void setup_addr_for_relaying(struct in6_addr *addr, struct interface *iface, int add)
 {
 	char ipbuf[INET6_ADDRSTRLEN];
 	inet_ntop(AF_INET6, addr, ipbuf, sizeof(ipbuf));

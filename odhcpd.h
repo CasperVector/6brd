@@ -15,7 +15,6 @@
 #pragma once
 #include <stddef.h>
 #include <netinet/in.h>
-#include <stdbool.h>
 
 #ifndef container_of
 #define container_of(ptr, type, member) (           \
@@ -24,14 +23,12 @@
 
 #include <libubox/uloop.h>
 
-#define _unused __attribute__((unused))
-
 struct interface;
 
 struct odhcpd_event {
 	struct uloop_fd uloop;
 	void (*handle_dgram)(void *addr, void *data, size_t len,
-			struct interface *iface, void *dest_addr);
+			struct interface *iface);
 	void (*handle_error)(struct odhcpd_event *e, int error);
 	void (*recv_msgs)(struct odhcpd_event *e);
 };
@@ -62,7 +59,7 @@ struct interface {
 	int ifindex;
 	char *ifname;
 	int learn_routes;
-	bool external;
+	int external;
 	struct odhcpd_event ndp_event;
 } *interfaces;
 
@@ -79,12 +76,12 @@ struct interface* odhcpd_get_interface_by_index(int ifindex);
 
 int netlink_setup_route(const struct in6_addr *addr, const int prefixlen,
 		const int ifindex, const struct in6_addr *gw,
-		const uint32_t metric, const bool add);
+		const uint32_t metric, const int add);
 int netlink_setup_proxy_neigh(const struct in6_addr *addr,
-		const int ifindex, const bool add);
-void netlink_dump_neigh_table(const bool proxy);
+		const int ifindex, const int add);
+void netlink_dump_neigh_table(const int proxy);
 
 // Exported module initializers
 int netlink_init(void);
 int ndp_init(void);
-int ndp_setup_interface(struct interface *iface, bool enable);
+int ndp_setup_interface(struct interface *iface, int enable);

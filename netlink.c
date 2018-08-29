@@ -32,7 +32,7 @@ static void handle_rtnl_event(struct odhcpd_event *ev);
 static int cb_rtnl_valid(struct nl_msg *msg, void *arg);
 static void catch_rtnl_err(struct odhcpd_event *e, int error);
 static struct nl_sock *create_socket(int protocol);
-static void netlink_dump_addr_table (const bool v6);
+static void netlink_dump_addr_table (const int v6);
 
 static struct nl_sock *rtnl_socket = NULL;
 static struct event_socket rtnl_event = {
@@ -102,11 +102,11 @@ static void handle_rtnl_event(struct odhcpd_event *e)
 
 /* Handler for neighbor cache entries from the kernel. This is our source
  * to learn and unlearn hosts on interfaces. */
-static int cb_rtnl_valid(struct nl_msg *msg, _unused void *arg)
+static int cb_rtnl_valid(struct nl_msg *msg, void *arg)
 {
 	struct nlmsghdr *hdr = nlmsg_hdr(msg);
 	struct netevent_handler_info event_info;
-	bool add = false;
+	int add = 0;
 	char ipbuf[INET6_ADDRSTRLEN];
 
 	memset(&event_info, 0, sizeof(event_info));
@@ -134,7 +134,7 @@ static int cb_rtnl_valid(struct nl_msg *msg, _unused void *arg)
 	}
 
 	case RTM_NEWNEIGH:
-		add = true;
+		add = 1;
 		/* fall through */
 	case RTM_DELNEIGH: {
 		struct ndmsg *ndm = nlmsg_data(hdr);
@@ -188,7 +188,7 @@ static void catch_rtnl_err(struct odhcpd_event *e, int error)
 	if (nl_socket_set_buffer_size(ev_sock->sock, ev_sock->sock_bufsize, 0))
 		goto err;
 
-	netlink_dump_addr_table(true);
+	netlink_dump_addr_table(1);
 	return;
 
 err:
@@ -218,7 +218,7 @@ err:
 
 int netlink_setup_route(const struct in6_addr *addr, const int prefixlen,
 		const int ifindex, const struct in6_addr *gw,
-		const uint32_t metric, const bool add)
+		const uint32_t metric, const int add)
 {
 	struct nl_msg *msg;
 	struct rtmsg rtm = {
@@ -257,7 +257,7 @@ int netlink_setup_route(const struct in6_addr *addr, const int prefixlen,
 
 
 int netlink_setup_proxy_neigh(const struct in6_addr *addr,
-		const int ifindex, const bool add)
+		const int ifindex, const int add)
 {
 	struct nl_msg *msg;
 	struct ndmsg ndm = {
@@ -288,7 +288,7 @@ int netlink_setup_proxy_neigh(const struct in6_addr *addr,
 }
 
 
-void netlink_dump_neigh_table(const bool proxy)
+void netlink_dump_neigh_table(const int proxy)
 {
 	struct nl_msg *msg;
 	struct ndmsg ndm = {
@@ -307,7 +307,7 @@ void netlink_dump_neigh_table(const bool proxy)
 	nlmsg_free(msg);
 }
 
-static void netlink_dump_addr_table (const bool v6)
+static void netlink_dump_addr_table (const int v6)
 {
 	struct nl_msg *msg;
 	struct ifaddrmsg ifa = {

@@ -130,10 +130,10 @@ int main(int argc, char **argv)
 		return 4;
 
 	for (i = 0; i < config.cnt; ++i)
-		ndp_setup_interface (interfaces + i, true);
+		ndp_setup_interface (interfaces + i, 1);
 	uloop_run ();
 	for (i = 0; i < config.cnt; ++i)
-		ndp_setup_interface (interfaces + i, false);
+		ndp_setup_interface (interfaces + i, 0);
 	return 0;
 }
 
@@ -216,7 +216,7 @@ struct interface* odhcpd_get_interface_by_name(const char *name)
 
 
 /* Convenience function to receive and do basic validation of packets */
-static void odhcpd_receive_packets(struct uloop_fd *u, _unused unsigned int events)
+static void odhcpd_receive_packets(struct uloop_fd *u, unsigned int events)
 {
 	struct odhcpd_event *e = container_of(u, struct odhcpd_event, uloop);
 
@@ -232,7 +232,7 @@ static void odhcpd_receive_packets(struct uloop_fd *u, _unused unsigned int even
 		int ret = -1;
 		socklen_t ret_len = sizeof(ret);
 
-		u->error = false;
+		u->error = 0;
 		if (e->handle_error && getsockopt(u->fd, SOL_SOCKET, SO_ERROR, &ret, &ret_len) == 0)
 			e->handle_error(e, ret);
 	}
@@ -242,7 +242,7 @@ static void odhcpd_receive_packets(struct uloop_fd *u, _unused unsigned int even
 		return;
 	}
 
-	while (true) {
+	while (1) {
 		struct iovec iov = {data_buf, sizeof(data_buf)};
 		struct msghdr msg = {
 			.msg_name = (void *) &addr,
@@ -266,7 +266,6 @@ static void odhcpd_receive_packets(struct uloop_fd *u, _unused unsigned int even
 		/* Extract destination interface */
 		int destiface = 0;
 		int *hlim = NULL;
-		void *dest = NULL;
 		struct in6_pktinfo *pktinfo;
 		struct in_pktinfo *pkt4info;
 		for (struct cmsghdr *ch = CMSG_FIRSTHDR(&msg); ch != NULL; ch = CMSG_NXTHDR(&msg, ch)) {
@@ -274,12 +273,10 @@ static void odhcpd_receive_packets(struct uloop_fd *u, _unused unsigned int even
 					ch->cmsg_type == IPV6_PKTINFO) {
 				pktinfo = (struct in6_pktinfo*)CMSG_DATA(ch);
 				destiface = pktinfo->ipi6_ifindex;
-				dest = &pktinfo->ipi6_addr;
 			} else if (ch->cmsg_level == IPPROTO_IP &&
 					ch->cmsg_type == IP_PKTINFO) {
 				pkt4info = (struct in_pktinfo*)CMSG_DATA(ch);
 				destiface = pkt4info->ipi_ifindex;
-				dest = &pkt4info->ipi_addr;
 			} else if (ch->cmsg_level == IPPROTO_IPV6 &&
 					ch->cmsg_type == IPV6_HOPLIMIT) {
 				hlim = (int*)CMSG_DATA(ch);
@@ -307,7 +304,7 @@ static void odhcpd_receive_packets(struct uloop_fd *u, _unused unsigned int even
 		if (addr.nl.nl_family == AF_NETLINK) {
 			syslog(LOG_DEBUG, "Received %li Bytes from %s%%%s", (long)len,
 					ipbuf, "netlink");
-			e->handle_dgram(&addr, data_buf, len, NULL, dest);
+			e->handle_dgram(&addr, data_buf, len, NULL);
 			return;
 		} else if (destiface != 0) {
 			for (int i = 0; i < config.cnt; ++i) {
@@ -315,7 +312,7 @@ static void odhcpd_receive_packets(struct uloop_fd *u, _unused unsigned int even
 				if (iface->ifindex != destiface) continue;
 				syslog(LOG_DEBUG, "Received %li Bytes from %s%%%s", (long)len,
 						ipbuf, iface->ifname);
-				e->handle_dgram(&addr, data_buf, len, iface, dest);
+				e->handle_dgram(&addr, data_buf, len, iface);
 			}
 		}
 	}
