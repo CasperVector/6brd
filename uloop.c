@@ -15,8 +15,6 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
-#include <sys/time.h>
-#include <sys/types.h>
 
 #include <unistd.h>
 #include <stdio.h>
@@ -26,17 +24,26 @@
 #include <string.h>
 #include <fcntl.h>
 #include <stdbool.h>
+#include <time.h>
+
+#include <sys/time.h>
+#include <sys/types.h>
+#include <sys/epoll.h>
+#include <sys/wait.h>
 
 #include "uloop.h"
-#include "utils.h"
 
-#ifdef USE_KQUEUE
-#include <sys/event.h>
+#ifndef ARRAY_SIZE
+#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 #endif
-#ifdef USE_EPOLL
-#include <sys/epoll.h>
+#define ULOOP_MAX_EVENTS 10
+
+/**
+ * FIXME: uClibc < 0.9.30.3 does not define EPOLLRDHUP for Linux >= 2.6.17
+ */
+#ifndef EPOLLRDHUP
+#define EPOLLRDHUP 0x2000
 #endif
-#include <sys/wait.h>
 
 struct uloop_fd_event {
 	struct uloop_fd *fd;
@@ -50,8 +57,6 @@ struct uloop_fd_stack {
 };
 
 static struct uloop_fd_stack *fd_stack = NULL;
-
-#define ULOOP_MAX_EVENTS 10
 
 static struct list_head timeouts = LIST_HEAD_INIT(timeouts);
 static struct list_head processes = LIST_HEAD_INIT(processes);
@@ -68,14 +73,88 @@ static int uloop_run_depth = 0;
 
 int uloop_fd_add(struct uloop_fd *sock, unsigned int flags);
 
-#ifdef USE_KQUEUE
-#include "uloop-kqueue.c"
-#endif
+static int uloop_init_pollfd(void)
+{
+	if (poll_fd >= 0)
+		return 0;
 
-#ifdef USE_EPOLL
-#include "uloop-epoll.c"
-#endif
+	poll_fd = epoll_create(32);
+	if (poll_fd < 0)
+		return -1;
 
+	fcntl(poll_fd, F_SETFD, fcntl(poll_fd, F_GETFD) | FD_CLOEXEC);
+	return 0;
+}
+
+static int register_poll(struct uloop_fd *fd, unsigned int flags)
+{
+	struct epoll_event ev;
+	int op = fd->registered ? EPOLL_CTL_MOD : EPOLL_CTL_ADD;
+
+	memset(&ev, 0, sizeof(struct epoll_event));
+
+	if (flags & ULOOP_READ)
+		ev.events |= EPOLLIN | EPOLLRDHUP;
+
+	if (flags & ULOOP_WRITE)
+		ev.events |= EPOLLOUT;
+
+	if (flags & ULOOP_EDGE_TRIGGER)
+		ev.events |= EPOLLET;
+
+	ev.data.ptr = fd;
+	fd->flags = flags;
+
+	return epoll_ctl(poll_fd, op, fd->fd, &ev);
+}
+
+static struct epoll_event events[ULOOP_MAX_EVENTS];
+
+static int __uloop_fd_delete(struct uloop_fd *sock)
+{
+	sock->flags = 0;
+	return epoll_ctl(poll_fd, EPOLL_CTL_DEL, sock->fd, 0);
+}
+
+static int uloop_fetch_events(int timeout)
+{
+	int n, nfds;
+
+	nfds = epoll_wait(poll_fd, events, ARRAY_SIZE(events), timeout);
+	for (n = 0; n < nfds; ++n) {
+		struct uloop_fd_event *cur = &cur_fds[n];
+		struct uloop_fd *u = events[n].data.ptr;
+		unsigned int ev = 0;
+
+		cur->fd = u;
+		if (!u)
+			continue;
+
+		if (events[n].events & (EPOLLERR|EPOLLHUP)) {
+			u->error = true;
+			if (!(u->flags & ULOOP_ERROR_CB))
+				uloop_fd_delete(u);
+		}
+
+		if(!(events[n].events & (EPOLLRDHUP|EPOLLIN|EPOLLOUT|EPOLLERR|EPOLLHUP))) {
+			cur->fd = NULL;
+			continue;
+		}
+
+		if(events[n].events & EPOLLRDHUP)
+			u->eof = true;
+
+		if(events[n].events & EPOLLIN)
+			ev |= ULOOP_READ;
+
+		if(events[n].events & EPOLLOUT)
+			ev |= ULOOP_WRITE;
+
+		cur->events = ev;
+	}
+
+	return nfds;
+}
 static void waker_consume(struct uloop_fd *fd, unsigned int events)
 {
 	char buf[4];

@@ -23,13 +23,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <signal.h>
-
-#if defined(__APPLE__) || defined(__FreeBSD__)
-#define USE_KQUEUE
-#else
-#define USE_EPOLL
-#endif
-
 #include "list.h"
 
 struct uloop_fd;
