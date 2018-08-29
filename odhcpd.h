@@ -51,6 +51,7 @@ enum netevents {
 };
 
 struct config {
+	bool foreground;
 	int log_level;
 	int cnt;
 } config;
@@ -66,6 +67,7 @@ struct interface {
 // Exported main functions
 int odhcpd_register(struct odhcpd_event *event);
 int odhcpd_deregister(struct odhcpd_event *event);
+void do_log (int priority, const char *format, ...);
 
 ssize_t odhcpd_send(int socket, struct sockaddr_in6 *dest,
 		struct iovec *iov, size_t iov_len,

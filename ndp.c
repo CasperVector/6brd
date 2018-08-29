@@ -61,14 +61,14 @@ int ndp_init(void)
 	/* Open ICMPv6 socket */
 	ping_socket = socket(AF_INET6, SOCK_RAW | SOCK_CLOEXEC, IPPROTO_ICMPV6);
 	if (ping_socket < 0) {
-		syslog(LOG_ERR, "socket(AF_INET6): %m");
+		do_log (LOG_ERR, "socket(AF_INET6): %s", strerror (errno));
 		ret = -1;
 		goto out;
 	}
 
 	if (setsockopt(ping_socket, IPPROTO_RAW, IPV6_CHECKSUM,
 				&val, sizeof(val)) < 0) {
-		syslog(LOG_ERR, "setsockopt(IPV6_CHECKSUM): %m");
+		do_log (LOG_ERR, "setsockopt(IPV6_CHECKSUM): %s", strerror (errno));
 		ret = -1;
 		goto out;
 	}
@@ -77,14 +77,14 @@ int ndp_init(void)
 	val = 255;
 	if (setsockopt(ping_socket, IPPROTO_IPV6, IPV6_MULTICAST_HOPS,
 				&val, sizeof(val)) < 0) {
-		syslog(LOG_ERR, "setsockopt(IPV6_MULTICAST_HOPS): %m");
+		do_log (LOG_ERR, "setsockopt(IPV6_MULTICAST_HOPS): %s", strerror (errno));
 		ret = -1;
 		goto out;
 	}
 
 	if (setsockopt(ping_socket, IPPROTO_IPV6, IPV6_UNICAST_HOPS,
 				&val, sizeof(val)) < 0) {
-		syslog(LOG_ERR, "setsockopt(IPV6_UNICAST_HOPS): %m");
+		do_log (LOG_ERR, "setsockopt(IPV6_UNICAST_HOPS): %s", strerror (errno));
 		ret = -1;
 		goto out;
 	}
@@ -93,7 +93,7 @@ int ndp_init(void)
 	ICMP6_FILTER_SETBLOCKALL(&filt);
 	if (setsockopt(ping_socket, IPPROTO_ICMPV6, ICMP6_FILTER,
 				&filt, sizeof(filt)) < 0) {
-		syslog(LOG_ERR, "setsockopt(ICMP6_FILTER): %m");
+		do_log (LOG_ERR, "setsockopt(ICMP6_FILTER): %s", strerror (errno));
 		ret = -1;
 		goto out;
 	}
@@ -137,7 +137,7 @@ int ndp_setup_interface(struct interface *iface, int enable)
 
 		iface->ndp_event.uloop.fd = socket(AF_PACKET, SOCK_DGRAM | SOCK_CLOEXEC, htons(ETH_P_IPV6));
 		if (iface->ndp_event.uloop.fd < 0) {
-			syslog(LOG_ERR, "socket(AF_PACKET): %m");
+			do_log (LOG_ERR, "socket(AF_PACKET): %s", strerror (errno));
 			ret = -1;
 			goto out;
 		}
@@ -146,7 +146,7 @@ int ndp_setup_interface(struct interface *iface, int enable)
 		int pktt = 1 << PACKET_MULTICAST;
 		if (setsockopt(iface->ndp_event.uloop.fd, SOL_PACKET, PACKET_RECV_TYPE,
 				&pktt, sizeof(pktt)) < 0) {
-			syslog(LOG_ERR, "setsockopt(PACKET_RECV_TYPE): %m");
+			do_log (LOG_ERR, "setsockopt(PACKET_RECV_TYPE): %s", strerror (errno));
 			ret = -1;
 			goto out;
 		}
@@ -154,7 +154,7 @@ int ndp_setup_interface(struct interface *iface, int enable)
 
 		if (setsockopt(iface->ndp_event.uloop.fd, SOL_SOCKET, SO_ATTACH_FILTER,
 				&bpf_prog, sizeof(bpf_prog))) {
-			syslog(LOG_ERR, "setsockopt(SO_ATTACH_FILTER): %m");
+			do_log (LOG_ERR, "setsockopt(SO_ATTACH_FILTER): %s", strerror (errno));
 			ret = -1;
 			goto out;
 		}
@@ -165,7 +165,7 @@ int ndp_setup_interface(struct interface *iface, int enable)
 		ll.sll_protocol = htons(ETH_P_IPV6);
 
 		if (bind(iface->ndp_event.uloop.fd, (struct sockaddr*)&ll, sizeof(ll)) < 0) {
-			syslog(LOG_ERR, "bind(): %m");
+			do_log (LOG_ERR, "bind(): %s", strerror (errno));
 			ret = -1;
 			goto out;
 		}
@@ -177,7 +177,7 @@ int ndp_setup_interface(struct interface *iface, int enable)
 
 		if (setsockopt(iface->ndp_event.uloop.fd, SOL_PACKET, PACKET_ADD_MEMBERSHIP,
 				&mreq, sizeof(mreq)) < 0) {
-			syslog(LOG_ERR, "setsockopt(PACKET_ADD_MEMBERSHIP): %m");
+			do_log (LOG_ERR, "setsockopt(PACKET_ADD_MEMBERSHIP): %s", strerror (errno));
 			ret = -1;
 			goto out;
 		}
@@ -255,7 +255,7 @@ static void ping6(struct in6_addr *addr,
 	char ipbuf[INET6_ADDRSTRLEN];
 
 	inet_ntop(AF_INET6, addr, ipbuf, sizeof(ipbuf));
-	syslog(LOG_NOTICE, "Pinging for %s%%%s", ipbuf, iface->ifname);
+	do_log(LOG_NOTICE, "Pinging for %s%%%s", ipbuf, iface->ifname);
 
 	netlink_setup_route(addr, 128, iface->ifindex, NULL, 128, 1);
 	odhcpd_send(ping_socket, &dest, &iov, 1, iface);
@@ -287,7 +287,7 @@ static void handle_solicit(void *addr, void *data, size_t len, struct interface 
 		return; /* Invalid target */
 
 	inet_ntop(AF_INET6, &req->nd_ns_target, ipbuf, sizeof(ipbuf));
-	syslog(LOG_DEBUG, "Got a NS for %s%%%s", ipbuf, iface->ifname);
+	do_log (LOG_DEBUG, "Got a NS for %s%%%s", ipbuf, iface->ifname);
 
 	odhcpd_get_mac(iface, mac);
 	if (!memcmp(ll->sll_addr, mac, sizeof(mac)))
@@ -306,7 +306,7 @@ static void setup_route(struct in6_addr *addr, struct interface *iface, int add)
 	char ipbuf[INET6_ADDRSTRLEN];
 
 	inet_ntop(AF_INET6, addr, ipbuf, sizeof(ipbuf));
-	syslog(LOG_NOTICE, "%s about %s%s%%%s",
+	do_log (LOG_NOTICE, "%s about %s%s%%%s",
 			(add) ? "Learning" : "Forgetting",
 			iface->learn_routes ? "proxy routing for " : "",
 			ipbuf, iface->ifname);
@@ -323,10 +323,10 @@ static void setup_addr_for_relaying(struct in6_addr *addr, struct interface *ifa
 		struct interface *c = interfaces + i;
 		if (iface == c) continue;
 		if (netlink_setup_proxy_neigh (addr, c->ifindex, add))
-			syslog(LOG_DEBUG, "Failed to %s proxy neighbour entry %s%%%s",
+			do_log (LOG_DEBUG, "Failed to %s proxy neighbour entry %s%%%s",
 				add ? "add" : "delete", ipbuf, c->ifname);
 		else
-			syslog(LOG_DEBUG, "%s proxy neighbour entry %s%%%s",
+			do_log (LOG_DEBUG, "%s proxy neighbour entry %s%%%s",
 				add ? "Added" : "Deleted", ipbuf, c->ifname);
 	}
 }

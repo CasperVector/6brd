@@ -13,6 +13,7 @@
  */
 
 #include <errno.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,6 +44,9 @@ static int scan_args (int argc, char **argv) {
 		else if (argv[i][0] == '-') {
 			if (l == 1) goto argerr;
 			for (j = 1; j < l; ++j) switch (argv[i][j]) {
+			case 'f':
+				config.foreground = true;
+				break;
 			case 'v':
 				switch (config.log_level) {
 					case LOG_ERR: config.log_level = LOG_NOTICE; break;
@@ -100,7 +104,8 @@ static int scan_args (int argc, char **argv) {
 argerr:
 	fprintf (
 		stderr,
-		"%s [-v ...] [~][!]iface1 [~][!]iface2 [[~][!]iface3 ...]\n"
+		"%s [-f] [-v ...] [~][!]iface1 [~][!]iface2 [[~][!]iface3 ...]\n"
+		"  -f:   foreground and send log messages to stderr\n"
 		"  -v:   increase verbosity by 1, at most 2 increments\n"
 		"   ~:   only proxy DAD messages for the specified interface\n"
 		"   !:   do not learn routes for neighbours on the interface\n",
@@ -117,8 +122,11 @@ int main(int argc, char **argv)
 		fprintf (stderr, "Must be run as root!\n");
 		return 2;
 	}
-	openlog ("odhcpd", LOG_PERROR | LOG_PID, LOG_DAEMON);
-	setlogmask(LOG_UPTO(config.log_level));
+	if (!config.foreground) {
+		openlog ("odhcpd", LOG_PID, LOG_DAEMON);
+		if (daemon (0, 0)) do_log
+			(LOG_ERR, "Failed to daemonize: %s", strerror (errno));
+	}
 	uloop_init();
 
 	ioctl_sock = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
@@ -137,6 +145,17 @@ int main(int argc, char **argv)
 	return 0;
 }
 
+void do_log (int priority, const char *format, ...) {
+	if (priority > config.log_level) return;
+	va_list args;
+	va_start (args, format);
+	if (config.foreground) {
+		vfprintf (stderr, format, args);
+		fprintf (stderr, "\n");
+	} else vsyslog (priority, format, args);
+	va_end (args);
+	return;
+}
 
 /* Read IPv6 MAC for interface */
 int odhcpd_get_mac(const struct interface *iface, uint8_t mac[6])
@@ -188,10 +207,10 @@ ssize_t odhcpd_send(int socket, struct sockaddr_in6 *dest,
 
 	ssize_t sent = sendmsg(socket, &msg, MSG_DONTWAIT);
 	if (sent < 0)
-		syslog(LOG_NOTICE, "Failed to send to %s%%%s (%m)",
-				ipbuf, iface->ifname);
+		do_log (LOG_NOTICE, "Failed to send to %s%%%s: %s",
+				ipbuf, iface->ifname, strerror (errno));
 	else
-		syslog(LOG_DEBUG, "Sent %li bytes to %s%%%s",
+		do_log (LOG_DEBUG, "Sent %li bytes to %s%%%s",
 				(long)sent, ipbuf, iface->ifname);
 	return sent;
 }
@@ -302,7 +321,7 @@ static void odhcpd_receive_packets(struct uloop_fd *u, unsigned int events)
 
 		/* From netlink */
 		if (addr.nl.nl_family == AF_NETLINK) {
-			syslog(LOG_DEBUG, "Received %li Bytes from %s%%%s", (long)len,
+			do_log (LOG_DEBUG, "Received %li Bytes from %s%%%s", (long)len,
 					ipbuf, "netlink");
 			e->handle_dgram(&addr, data_buf, len, NULL);
 			return;
@@ -310,7 +329,7 @@ static void odhcpd_receive_packets(struct uloop_fd *u, unsigned int events)
 			for (int i = 0; i < config.cnt; ++i) {
 				struct interface *iface = interfaces + i;
 				if (iface->ifindex != destiface) continue;
-				syslog(LOG_DEBUG, "Received %li Bytes from %s%%%s", (long)len,
+				do_log (LOG_DEBUG, "Received %li Bytes from %s%%%s", (long)len,
 						ipbuf, iface->ifname);
 				e->handle_dgram(&addr, data_buf, len, iface);
 			}

@@ -50,13 +50,13 @@ int netlink_init(void)
 {
 	rtnl_socket = create_socket(NETLINK_ROUTE);
 	if (!rtnl_socket) {
-		syslog(LOG_ERR, "Unable to open nl socket: %m");
+		do_log (LOG_ERR, "Unable to open nl socket: %s", strerror (errno));
 		goto err;
 	}
 
 	rtnl_event.sock = create_socket(NETLINK_ROUTE);
 	if (!rtnl_event.sock) {
-		syslog(LOG_ERR, "Unable to open nl event socket: %m");
+		do_log (LOG_ERR, "Unable to open nl event socket: %s", strerror (errno));
 		goto err;
 	}
 
@@ -159,7 +159,7 @@ static int cb_rtnl_valid(struct nl_msg *msg, void *arg)
 			return NL_SKIP;
 
 		inet_ntop(AF_INET6, &event_info.neigh.dst, ipbuf, sizeof(ipbuf));
-		syslog (LOG_DEBUG, "Netlink %s %s%%%s", add ? "newneigh" : "delneigh",
+		do_log (LOG_DEBUG, "Netlink %s %s%%%s", add ? "newneigh" : "delneigh",
 			ipbuf, event_info.iface->ifname);
 
 		event_info.neigh.state = ndm->ndm_state;
