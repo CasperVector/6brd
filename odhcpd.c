@@ -12,19 +12,12 @@
  *
  */
 
-#include <time.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <stdio.h>
-#include <getopt.h>
-#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <signal.h>
-#include <stdbool.h>
 #include <syslog.h>
-#include <alloca.h>
 
 #include <arpa/inet.h>
 #include <net/if.h>
@@ -34,65 +27,113 @@
 
 #include <sys/socket.h>
 #include <sys/ioctl.h>
-#include <sys/epoll.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <sys/syscall.h>
 
 #include <libubox/uloop.h>
 #include "odhcpd.h"
 
-
-
+struct config config = { .log_level = LOG_ERR };
 static int ioctl_sock;
 
-static void print_usage(const char *app)
-{
-	printf(
-	"== %s Usage ==\n\n"
-	"  -h, --help   Print this help\n"
-	"  -l level     Specify log level 0..7 (default %d)\n",
-		app, config.log_level
-	);
-}
+static int scan_args (int argc, char **argv) {
+	int i, j, l;
+	struct interface *tmp;
+	for (i = 1; i < argc; ++i) {
+		l = strlen (argv[i]);
+		if (!l) goto argerr;
+		else if (argv[i][0] == '-') {
+			if (l == 1) goto argerr;
+			for (j = 1; j < l; ++j) switch (argv[i][j]) {
+			case 'v':
+				switch (config.log_level) {
+					case LOG_ERR: config.log_level = LOG_NOTICE; break;
+					case LOG_NOTICE: config.log_level = LOG_DEBUG; break;
+				}
+				break;
+			default:
+				goto argerr;
+			}
+		} else break;
+	}
 
+	for (; i < argc; ++i, ++config.cnt) {
+		struct interface *iface;
+		if ((tmp = realloc (
+			interfaces, (config.cnt + 1) * sizeof (struct interface)
+		)) == NULL) {
+			free (interfaces);
+			fprintf (stderr, "Failed to allocate memory for interfaces\n");
+			return 2;
+		} else {
+			interfaces = tmp;
+			iface = interfaces + config.cnt;
+			*iface = (struct interface) { .learn_routes = 1 };
+		}
+
+		l = strlen (argv[i]);
+		for (j = 0; j < l; ++j) {
+			if (argv[i][j] == '~') iface->external = 1;
+			else if (argv[i][j] == '!') iface->learn_routes = 0;
+			else break;
+		}
+		if (j < l) {
+			iface->ifname = argv[i] + j;
+			if ((iface->ifindex = if_nametoindex (iface->ifname)) <= 0) {
+				free (interfaces);
+				fprintf (
+					stderr, "Failed to get interface index for %s\n",
+					iface->ifname
+				);
+				return 2;
+			}
+		} else {
+			free (interfaces);
+			goto argerr;
+		}
+	}
+
+	if (config.cnt < 2) {
+		if (interfaces) free (interfaces);
+		goto argerr;
+	}
+
+	return 1;
+argerr:
+	fprintf (
+		stderr,
+		"%s [-v ...] [~][!]iface1 [~][!]iface2 [[~][!]iface3 ...]\n"
+		"  -v:   increase verbosity by 1, at most 2 increments\n"
+		"   ~:   only proxy DAD messages for the specified interface\n"
+		"   !:   do not learn routes for neighbours on the interface\n",
+		argv[0]
+	);
+	return 0;
+}
 
 int main(int argc, char **argv)
 {
-	openlog("odhcpd", LOG_PERROR | LOG_PID, LOG_DAEMON);
-	int opt;
-
-	while ((opt = getopt(argc, argv, "hl:")) != -1) {
-		switch (opt) {
-		case 'h':
-			print_usage(argv[0]);
-			return 0;
-		case 'l':
-			config.log_level = (atoi(optarg) & LOG_PRIMASK);
-			fprintf(stderr, "Log level set to %d\n", config.log_level);
-			break;
-		}
+	int i;
+	if (!scan_args (argc, argv)) return 1;
+	if (getuid () != 0) {
+		fprintf (stderr, "Must be run as root!\n");
+		return 2;
 	}
+	openlog ("odhcpd", LOG_PERROR | LOG_PID, LOG_DAEMON);
 	setlogmask(LOG_UPTO(config.log_level));
 	uloop_init();
 
-	if (getuid() != 0) {
-		syslog(LOG_ERR, "Must be run as root!");
-		return 2;
-	}
-
 	ioctl_sock = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-
 	if (ioctl_sock < 0)
 		return 4;
-
 	if (netlink_init())
 		return 4;
-
 	if (ndp_init())
 		return 4;
 
-	odhcpd_run();
+	for (i = 0; i < config.cnt; ++i)
+		ndp_setup_interface (interfaces + i, true);
+	uloop_run ();
+	for (i = 0; i < config.cnt; ++i)
+		ndp_setup_interface (interfaces + i, false);
 	return 0;
 }
 
@@ -158,22 +199,18 @@ ssize_t odhcpd_send(int socket, struct sockaddr_in6 *dest,
 
 struct interface* odhcpd_get_interface_by_index(int ifindex)
 {
-	struct interface *iface;
-	list_for_each_entry(iface, &interfaces, head)
-		if (iface->ifindex == ifindex)
-			return iface;
-
+	for (int i = 0; i < config.cnt; ++i) {
+		if (interfaces[i].ifindex == ifindex) return interfaces + i;
+	}
 	return NULL;
 }
 
 
 struct interface* odhcpd_get_interface_by_name(const char *name)
 {
-	struct interface *iface;
-	list_for_each_entry(iface, &interfaces, head)
-		if (!strcmp(iface->ifname, name))
-			return iface;
-
+	for (int i = 0; i < config.cnt; ++i) {
+		if (!strcmp (interfaces[i].ifname, name)) return interfaces + i;
+	}
 	return NULL;
 }
 
@@ -273,19 +310,14 @@ static void odhcpd_receive_packets(struct uloop_fd *u, _unused unsigned int even
 			e->handle_dgram(&addr, data_buf, len, NULL, dest);
 			return;
 		} else if (destiface != 0) {
-			struct interface *iface;
-			list_for_each_entry(iface, &interfaces, head) {
-				if (iface->ifindex != destiface)
-					continue;
-
+			for (int i = 0; i < config.cnt; ++i) {
+				struct interface *iface = interfaces + i;
+				if (iface->ifindex != destiface) continue;
 				syslog(LOG_DEBUG, "Received %li Bytes from %s%%%s", (long)len,
 						ipbuf, iface->ifname);
-
 				e->handle_dgram(&addr, data_buf, len, iface, dest);
 			}
 		}
-
-
 	}
 }
 

@@ -13,14 +13,16 @@
  */
 
 #include <stdio.h>
-#include <stdlib.h>
-#include <signal.h>
+#include <string.h>
+#include <syslog.h>
 #include <errno.h>
 
 #include <fcntl.h>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <net/ethernet.h>
 #include <netinet/ip6.h>
 #include <netinet/icmp6.h>
@@ -29,10 +31,9 @@
 #include <linux/filter.h>
 #include <linux/neighbour.h>
 
+#include <libubox/uloop.h>
 #include "odhcpd.h"
 
-
-static void ndp_netevent_cb(unsigned long event, struct netevent_handler_info *info);
 static void setup_route(struct in6_addr *addr, struct interface *iface, bool add);
 static void setup_addr_for_relaying(struct in6_addr *addr, struct interface *iface, bool add);
 static void handle_solicit(void *addr, void *data, size_t len,
@@ -51,7 +52,6 @@ static struct sock_filter bpf[] = {
 	BPF_STMT(BPF_RET | BPF_K, 0),
 };
 static const struct sock_fprog bpf_prog = {sizeof(bpf) / sizeof(*bpf), bpf};
-static struct netevent_handler ndp_netevent_handler = { .cb = ndp_netevent_cb, };
 
 /* Initialize NDP-proxy */
 int ndp_init(void)
@@ -99,8 +99,6 @@ int ndp_init(void)
 		goto out;
 	}
 
-	netlink_add_netevent_handler(&ndp_netevent_handler);
-
 out:
 	if (ret < 0 && ping_socket > 0) {
 		close(ping_socket);
@@ -128,14 +126,11 @@ int ndp_setup_interface(struct interface *iface, bool enable)
 		uloop_fd_delete(&iface->ndp_event.uloop);
 		close(iface->ndp_event.uloop.fd);
 		iface->ndp_event.uloop.fd = -1;
-
-		if (!enable || iface->ndp != MODE_RELAY)
-			if (write(procfd, "0\n", 2) < 0) {}
-
+		if (!enable && write (procfd, "0\n", 2) < 0) {}
 		dump_neigh = true;
 	}
 
-	if (enable && iface->ndp == MODE_RELAY) {
+	if (enable) {
 		struct sockaddr_ll ll;
 		struct packet_mreq mreq;
 
@@ -213,13 +208,12 @@ int ndp_setup_interface(struct interface *iface, bool enable)
 	return ret;
 }
 
-static void ndp_netevent_cb(unsigned long event, struct netevent_handler_info *info)
+void ndp_netevent_cb (unsigned long event, struct netevent_handler_info *info)
 {
 	struct interface *iface = info->iface;
 	bool add = true;
 
-	if (!iface || iface->ndp == MODE_DISABLED)
-		return;
+	if (!iface) return;
 
 	switch (event) {
 	case NETEV_NEIGH6_DEL:
@@ -282,11 +276,9 @@ static void handle_solicit(void *addr, void *data, size_t len,
 	/* Solicitation is for duplicate address detection */
 	bool ns_is_dad = IN6_IS_ADDR_UNSPECIFIED(&ip6->ip6_src);
 
-	/* Don't process solicit messages on non relay interfaces
-	 * Don't forward any non-DAD solicitation for external ifaces
+	/* Don't forward any non-DAD solicitation for external ifaces
 	 * TODO: check if we should even forward DADs for them */
-	if (iface->ndp != MODE_RELAY || (iface->external && !ns_is_dad))
-		return;
+	if (iface->external && !ns_is_dad) return;
 
 	if (len < sizeof(*ip6) + sizeof(*req))
 		return; // Invalid reqicitation
@@ -303,11 +295,11 @@ static void handle_solicit(void *addr, void *data, size_t len,
 	if (!memcmp(ll->sll_addr, mac, sizeof(mac)))
 		return; /* Looped back */
 
-	struct interface *c;
-	list_for_each_entry(c, &interfaces, head)
-		if (iface != c && c->ndp == MODE_RELAY &&
-				(ns_is_dad || !c->external))
+	for (int i = 0; i < config.cnt; ++i) {
+		struct interface *c = interfaces + i;
+		if (iface != c && (ns_is_dad || !c->external))
 			ping6(&req->nd_ns_target, c);
+	}
 }
 
 /* Use rtnetlink to modify kernel routes */
@@ -327,22 +319,16 @@ static void setup_route(struct in6_addr *addr, struct interface *iface, bool add
 
 static void setup_addr_for_relaying(struct in6_addr *addr, struct interface *iface, bool add)
 {
-	struct interface *c;
 	char ipbuf[INET6_ADDRSTRLEN];
-
 	inet_ntop(AF_INET6, addr, ipbuf, sizeof(ipbuf));
-
-	list_for_each_entry(c, &interfaces, head) {
-		if (iface == c || (c->ndp != MODE_RELAY && !add))
-			continue;
-
-		bool neigh_add = (c->ndp == MODE_RELAY ? add : false);
-
-		if (netlink_setup_proxy_neigh(addr, c->ifindex, neigh_add))
+	for (int i = 0; i < config.cnt; ++i) {
+		struct interface *c = interfaces + i;
+		if (iface == c) continue;
+		if (netlink_setup_proxy_neigh (addr, c->ifindex, add))
 			syslog(LOG_DEBUG, "Failed to %s proxy neighbour entry %s%%%s",
-				neigh_add ? "add" : "delete", ipbuf, c->ifname);
+				add ? "add" : "delete", ipbuf, c->ifname);
 		else
 			syslog(LOG_DEBUG, "%s proxy neighbour entry %s%%%s",
-				neigh_add ? "Added" : "Deleted", ipbuf, c->ifname);
+				add ? "Added" : "Deleted", ipbuf, c->ifname);
 	}
 }

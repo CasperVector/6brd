@@ -16,17 +16,9 @@
 #include <string.h>
 #include <syslog.h>
 
-#include <linux/netlink.h>
-#include <linux/if_addr.h>
-#include <linux/neighbour.h>
-#include <linux/rtnetlink.h>
-
+#include <netlink/netlink.h>
 #include <netlink/msg.h>
-#include <netlink/socket.h>
-#include <netlink/attr.h>
-
 #include <arpa/inet.h>
-#include <libubox/list.h>
 
 #include "odhcpd.h"
 
@@ -43,7 +35,6 @@ static struct nl_sock *create_socket(int protocol);
 static void netlink_dump_addr_table (const bool v6);
 
 static struct nl_sock *rtnl_socket = NULL;
-struct list_head netevent_handler_list = LIST_HEAD_INIT(netevent_handler_list);
 static struct event_socket rtnl_event = {
 	.ev = {
 		.uloop = {.fd = - 1, },
@@ -100,25 +91,6 @@ err:
 	}
 
 	return -1;
-}
-
-
-int netlink_add_netevent_handler(struct netevent_handler *handler)
-{
-	if (!handler->cb)
-		return -1;
-
-	list_add(&handler->head, &netevent_handler_list);
-
-	return 0;
-}
-
-static void call_netevent_handler_list(unsigned long event, struct netevent_handler_info *info)
-{
-	struct netevent_handler *handler;
-
-	list_for_each_entry(handler, &netevent_handler_list, head)
-		handler->cb(event, info);
 }
 
 static void handle_rtnl_event(struct odhcpd_event *e)
@@ -192,9 +164,7 @@ static int cb_rtnl_valid(struct nl_msg *msg, _unused void *arg)
 
 		event_info.neigh.state = ndm->ndm_state;
 		event_info.neigh.flags = ndm->ndm_flags;
-
-		call_netevent_handler_list(add ? NETEV_NEIGH6_ADD : NETEV_NEIGH6_DEL,
-						&event_info);
+		ndp_netevent_cb (add ? NETEV_NEIGH6_ADD : NETEV_NEIGH6_DEL, &event_info);
 		break;
 	}
 

@@ -13,20 +13,15 @@
  */
 
 #pragma once
+#include <stddef.h>
 #include <netinet/in.h>
-#include <netinet/icmp6.h>
-#include <netinet/ether.h>
 #include <stdbool.h>
-#include <syslog.h>
-
-#include <libubox/blobmsg.h>
 
 #ifndef container_of
 #define container_of(ptr, type, member) (           \
     (type *)( (char *)ptr - offsetof(type,member) ))
 #endif
 
-#include <libubox/list.h>
 #include <libubox/uloop.h>
 
 #define _unused __attribute__((unused))
@@ -50,50 +45,26 @@ struct netevent_handler_info {
 	} neigh;
 };
 
+void ndp_netevent_cb
+	(unsigned long event, struct netevent_handler_info *info);
+
 enum netevents {
 	NETEV_NEIGH6_ADD,
 	NETEV_NEIGH6_DEL,
 };
 
-struct netevent_handler {
-	struct list_head head;
-	void (*cb) (unsigned long event, struct netevent_handler_info *info);
-};
-
-enum odhcpd_mode {
-	MODE_DISABLED,
-	MODE_SERVER,
-	MODE_RELAY,
-	MODE_HYBRID
-};
-
 struct config {
 	int log_level;
+	int cnt;
 } config;
 
 struct interface {
-	struct list_head head;
-
 	int ifindex;
 	char *ifname;
-	const char *name;
-
-	// NDP runtime data
-	struct odhcpd_event ndp_event;
-
-	// Services
-	enum odhcpd_mode ndp;
-
-	// Config
-	bool inuse;
-	bool external;
-	bool master;
-
-	// RA
 	int learn_routes;
-};
-
-extern struct list_head interfaces;
+	bool external;
+	struct odhcpd_event ndp_event;
+} *interfaces;
 
 // Exported main functions
 int odhcpd_register(struct odhcpd_event *event);
@@ -106,9 +77,6 @@ struct interface* odhcpd_get_interface_by_name(const char *name);
 int odhcpd_get_mac(const struct interface *iface, uint8_t mac[6]);
 struct interface* odhcpd_get_interface_by_index(int ifindex);
 
-void odhcpd_run(void);
-
-int netlink_add_netevent_handler(struct netevent_handler *hdlr);
 int netlink_setup_route(const struct in6_addr *addr, const int prefixlen,
 		const int ifindex, const struct in6_addr *gw,
 		const uint32_t metric, const bool add);
