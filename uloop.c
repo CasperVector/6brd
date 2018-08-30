@@ -17,19 +17,14 @@
  */
 
 #include <unistd.h>
-#include <stdio.h>
 #include <stdlib.h>
-#include <errno.h>
-#include <poll.h>
 #include <string.h>
 #include <fcntl.h>
 #include <stdbool.h>
-#include <time.h>
+#include <signal.h>
 
-#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/epoll.h>
-#include <sys/wait.h>
 
 #include "uloop.h"
 
@@ -58,18 +53,12 @@ struct uloop_fd_stack {
 
 static struct uloop_fd_stack *fd_stack = NULL;
 
-static struct list_head timeouts = LIST_HEAD_INIT(timeouts);
-static struct list_head processes = LIST_HEAD_INIT(processes);
-
 static int poll_fd = -1;
 bool uloop_cancelled = false;
-bool uloop_handle_sigchld = true;
 static int uloop_status = 0;
-static bool do_sigchld = false;
 
 static struct uloop_fd_event cur_fds[ULOOP_MAX_EVENTS];
 static int cur_fd, cur_nfds;
-static int uloop_run_depth = 0;
 
 int uloop_fd_add(struct uloop_fd *sock, unsigned int flags);
 
@@ -154,63 +143,6 @@ static int uloop_fetch_events(int timeout)
 	}
 
 	return nfds;
-}
-static void waker_consume(struct uloop_fd *fd, unsigned int events)
-{
-	char buf[4];
-
-	while (read(fd->fd, buf, 4) > 0)
-		;
-}
-
-static int waker_pipe = -1;
-static struct uloop_fd waker_fd = {
-	.fd = -1,
-	.cb = waker_consume,
-};
-
-static void waker_init_fd(int fd)
-{
-	fcntl(fd, F_SETFD, fcntl(fd, F_GETFD) | FD_CLOEXEC);
-	fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
-}
-
-static int waker_init(void)
-{
-	int fds[2];
-
-	if (waker_pipe >= 0)
-		return 0;
-
-	if (pipe(fds) < 0)
-		return -1;
-
-	waker_init_fd(fds[0]);
-	waker_init_fd(fds[1]);
-	waker_pipe = fds[1];
-
-	waker_fd.fd = fds[0];
-	waker_fd.cb = waker_consume;
-	uloop_fd_add(&waker_fd, ULOOP_READ);
-
-	return 0;
-}
-
-static void uloop_setup_signals(bool add);
-
-int uloop_init(void)
-{
-	if (uloop_init_pollfd() < 0)
-		return -1;
-
-	if (waker_init() < 0) {
-		uloop_done();
-		return -1;
-	}
-
-	uloop_setup_signals(true);
-
-	return 0;
 }
 
 static bool uloop_fd_stack_event(struct uloop_fd *fd, int events)
@@ -328,170 +260,10 @@ int uloop_fd_delete(struct uloop_fd *fd)
 	return __uloop_fd_delete(fd);
 }
 
-static int tv_diff(struct timeval *t1, struct timeval *t2)
-{
-	return
-		(t1->tv_sec - t2->tv_sec) * 1000 +
-		(t1->tv_usec - t2->tv_usec) / 1000;
-}
-
-int uloop_timeout_add(struct uloop_timeout *timeout)
-{
-	struct uloop_timeout *tmp;
-	struct list_head *h = &timeouts;
-
-	if (timeout->pending)
-		return -1;
-
-	list_for_each_entry(tmp, &timeouts, list) {
-		if (tv_diff(&tmp->time, &timeout->time) > 0) {
-			h = &tmp->list;
-			break;
-		}
-	}
-
-	list_add_tail(&timeout->list, h);
-	timeout->pending = true;
-
-	return 0;
-}
-
-static void uloop_gettime(struct timeval *tv)
-{
-	struct timespec ts;
-
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	tv->tv_sec = ts.tv_sec;
-	tv->tv_usec = ts.tv_nsec / 1000;
-}
-
-int uloop_timeout_set(struct uloop_timeout *timeout, int msecs)
-{
-	struct timeval *time = &timeout->time;
-
-	if (timeout->pending)
-		uloop_timeout_cancel(timeout);
-
-	uloop_gettime(time);
-
-	time->tv_sec += msecs / 1000;
-	time->tv_usec += (msecs % 1000) * 1000;
-
-	if (time->tv_usec > 1000000) {
-		time->tv_sec++;
-		time->tv_usec -= 1000000;
-	}
-
-	return uloop_timeout_add(timeout);
-}
-
-int uloop_timeout_cancel(struct uloop_timeout *timeout)
-{
-	if (!timeout->pending)
-		return -1;
-
-	list_del(&timeout->list);
-	timeout->pending = false;
-
-	return 0;
-}
-
-int uloop_timeout_remaining(struct uloop_timeout *timeout)
-{
-	struct timeval now;
-
-	if (!timeout->pending)
-		return -1;
-
-	uloop_gettime(&now);
-
-	return tv_diff(&timeout->time, &now);
-}
-
-int uloop_process_add(struct uloop_process *p)
-{
-	struct uloop_process *tmp;
-	struct list_head *h = &processes;
-
-	if (p->pending)
-		return -1;
-
-	list_for_each_entry(tmp, &processes, list) {
-		if (tmp->pid > p->pid) {
-			h = &tmp->list;
-			break;
-		}
-	}
-
-	list_add_tail(&p->list, h);
-	p->pending = true;
-
-	return 0;
-}
-
-int uloop_process_delete(struct uloop_process *p)
-{
-	if (!p->pending)
-		return -1;
-
-	list_del(&p->list);
-	p->pending = false;
-
-	return 0;
-}
-
-static void uloop_handle_processes(void)
-{
-	struct uloop_process *p, *tmp;
-	pid_t pid;
-	int ret;
-
-	do_sigchld = false;
-
-	while (1) {
-		pid = waitpid(-1, &ret, WNOHANG);
-		if (pid < 0 && errno == EINTR)
-			continue;
-
-		if (pid <= 0)
-			return;
-
-		list_for_each_entry_safe(p, tmp, &processes, list) {
-			if (p->pid < pid)
-				continue;
-
-			if (p->pid > pid)
-				break;
-
-			uloop_process_delete(p);
-			p->cb(p, ret);
-		}
-	}
-
-}
-
-static void uloop_signal_wake(void)
-{
-	do {
-		if (write(waker_pipe, "w", 1) < 0) {
-			if (errno == EINTR)
-				continue;
-		}
-		break;
-	} while (1);
-}
-
 static void uloop_handle_sigint(int signo)
 {
 	uloop_status = signo;
 	uloop_cancelled = true;
-	uloop_signal_wake();
-}
-
-static void uloop_sigchld(int signo)
-{
-	do_sigchld = true;
-	uloop_signal_wake();
 }
 
 static void uloop_install_handler(int signum, void (*handler)(int), struct sigaction* old, bool add)
@@ -518,143 +290,34 @@ static void uloop_install_handler(int signum, void (*handler)(int), struct sigac
 		sigaction(signum, act, NULL);
 }
 
-static void uloop_ignore_signal(int signum, bool ignore)
-{
-	struct sigaction s;
-	void *new_handler = NULL;
-
-	sigaction(signum, NULL, &s);
-
-	if (ignore) {
-		if (s.sa_handler == SIG_DFL) /* Ignore only if there isn't any custom handler */
-			new_handler = SIG_IGN;
-	} else {
-		if (s.sa_handler == SIG_IGN) /* Restore only if noone modified our SIG_IGN */
-			new_handler = SIG_DFL;
-	}
-
-	if (new_handler) {
-		s.sa_handler = new_handler;
-		s.sa_flags = 0;
-		sigaction(signum, &s, NULL);
-	}
-}
-
 static void uloop_setup_signals(bool add)
 {
-	static struct sigaction old_sigint, old_sigchld, old_sigterm;
-
+	static struct sigaction old_sigint, old_sigterm;
 	uloop_install_handler(SIGINT, uloop_handle_sigint, &old_sigint, add);
 	uloop_install_handler(SIGTERM, uloop_handle_sigint, &old_sigterm, add);
-
-	if (uloop_handle_sigchld)
-		uloop_install_handler(SIGCHLD, uloop_sigchld, &old_sigchld, add);
-
-	uloop_ignore_signal(SIGPIPE, add);
 }
 
-static int uloop_get_next_timeout(struct timeval *tv)
+int uloop_init(void)
 {
-	struct uloop_timeout *timeout;
-	int diff;
-
-	if (list_empty(&timeouts))
+	if (uloop_init_pollfd() < 0)
 		return -1;
-
-	timeout = list_first_entry(&timeouts, struct uloop_timeout, list);
-	diff = tv_diff(&timeout->time, tv);
-	if (diff < 0)
-		return 0;
-
-	return diff;
+	uloop_setup_signals(true);
+	return 0;
 }
 
-static void uloop_process_timeouts(struct timeval *tv)
+int uloop_run(void)
 {
-	struct uloop_timeout *t;
-
-	while (!list_empty(&timeouts)) {
-		t = list_first_entry(&timeouts, struct uloop_timeout, list);
-
-		if (tv_diff(&t->time, tv) > 0)
-			break;
-
-		uloop_timeout_cancel(t);
-		if (t->cb)
-			t->cb(t);
-	}
-}
-
-static void uloop_clear_timeouts(void)
-{
-	struct uloop_timeout *t, *tmp;
-
-	list_for_each_entry_safe(t, tmp, &timeouts, list)
-		uloop_timeout_cancel(t);
-}
-
-static void uloop_clear_processes(void)
-{
-	struct uloop_process *p, *tmp;
-
-	list_for_each_entry_safe(p, tmp, &processes, list)
-		uloop_process_delete(p);
-}
-
-bool uloop_cancelling(void)
-{
-	return uloop_run_depth > 0 && uloop_cancelled;
-}
-
-int uloop_run_timeout(int timeout)
-{
-	int next_time = 0;
-	struct timeval tv;
-
-	uloop_run_depth++;
-
 	uloop_status = 0;
 	uloop_cancelled = false;
-	while (!uloop_cancelled)
-	{
-		uloop_gettime(&tv);
-		uloop_process_timeouts(&tv);
-
-		if (do_sigchld)
-			uloop_handle_processes();
-
-		if (uloop_cancelled)
-			break;
-
-		uloop_gettime(&tv);
-
-		next_time = uloop_get_next_timeout(&tv);
-		if (timeout >= 0 && timeout < next_time)
-			next_time = timeout;
-		uloop_run_events(next_time);
-	}
-
-	--uloop_run_depth;
-
+	while (!uloop_cancelled) uloop_run_events(-1);
 	return uloop_status;
 }
 
 void uloop_done(void)
 {
 	uloop_setup_signals(false);
-
 	if (poll_fd >= 0) {
 		close(poll_fd);
 		poll_fd = -1;
 	}
-
-	if (waker_pipe >= 0) {
-		uloop_fd_delete(&waker_fd);
-		close(waker_pipe);
-		close(waker_fd.fd);
-		waker_pipe = -1;
-	}
-
-	uloop_clear_timeouts();
-	uloop_clear_processes();
 }
