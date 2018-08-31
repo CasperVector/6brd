@@ -31,8 +31,8 @@
 #include <linux/filter.h>
 #include <linux/neighbour.h>
 
-#include "uloop.h"
-#include "odhcpd.h"
+#include "nloop.h"
+#include "6brd.h"
 
 static void setup_route(struct in6_addr *addr, struct interface *iface, int add);
 static void setup_addr_for_relaying(struct in6_addr *addr, struct interface *iface, int add);

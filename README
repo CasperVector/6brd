@@ -1,0 +1,85 @@
+6brd: bridge NDP between equal-prefix IPv6 segments (v0.0.1)
+============================================================
+
+
+"The original motivation of Aboriginal Linux was that back around 2002 Knoppix
+ was the only Linux distro paying attention to the desktop, and Knoppix's 700
+ megabyte live CD included the same 100 megabytes of packages Linux From Scratch
+ built, which provided a roughly equivalent command line experience as the 1.7
+ megabytes tomsrtbt which was based on busybox and uClibc."
+                                                                 --- Rob Landley
+
+
+About
+-----
+
+ndppd [1] is often used to relay NDP [2] between network segments; however, for
+segments with the same prefix (typically a /64), ndppd had a routing problem:
+usually the upstream segment has a higher routing priority, so when the relay
+receives an upstream packet, it will attempt to forward the packet to the
+upstream segment instead of the downstream segment(s).
+
+[1] <https://github.com/DanielAdolfsson/ndppd>.
+[2] <https://en.wikipedia.org/wiki/Neighbor_Discovery_Protocol>.
+
+odhcpd [3] (based on 6relayd [4]) solves this by not relaying NSs and NAs by
+itself, but pinging the destination address on network segment(s) other than the
+source segment; it then watches the neighbour table for changes, sets up NDP
+entries for said address in the NDP proxy table as well as the routing table
+accordingly.
+
+[3] <https://git.openwrt.org/?p=project/odhcpd.git>.
+[4] <https://github.com/sbyx/6relayd>.
+
+Unfortunately, odhcpd seems to be designed for OpenWRT in a nearly exclusive
+way: the code implements DHCPv6 (server or relay), router discovery (server or
+relay), which is largely undesirable since these are usually handled better by
+other dedicate packages; it also uses OpenWRT's libubox and UCI system, which
+complicates the build procedure and the configuration.
+
+6brd [5] is a solution to this: it focuses on bridging NDP between equal-prefix
+IPv6 segments using the mechanism mentioned above, and leaves the unrelated
+functionalities to other software like radvd [6]; additionally, 6brd is
+extremely simple to build and use (see below).
+
+[5] <https://gitlab.com/CasperVector/6brd>.
+[6] <http://www.litech.org/radvd/>.
+
+
+Usage
+-----
+
+6brd current builds and runs on Linux; see `Makefile' for how to build it.
+It is invoked as described below:
+  # 6brd [-f] [-v ...] [~][!]iface1 [~][!]iface2 [[~][!]iface3 ...]
+      -f:   foreground and send log messages to stderr
+      -v:   increase verbosity by 1, at most 2 increments
+       ~:   only proxy DAD messages for the specified interface
+       !:   don't learn routes for neighbours on the interface
+
+For instance, if eth0 (x:x:x:x:y:y:y:y/64) is connected to the IPv6-enabled
+upstream subnet, and you want to enable IPv6 on the wlan0 subnet, you can
+typically use
+  # 6brd '!eth0' wlan0
+Of course, before doing this, you need to enable IPv6 packet forwarding:
+  # sysctl net.ipv6.conf.all.forwarding=1
+I also find the following desirable:
+  # sysctl net.ipv6.conf.all.accept_dad=0
+  # sysctl net.ipv6.conf.all.accept_ra=0
+  # sysctl net.ipv6.conf.all.autoconf=0
+Appropriate configuration for addresses and routing is also necessary:
+  # ip addr add x:x:x:x:y:y:y:y/64 dev eth0 noprefixroute
+  # ip addr add x:x:x:x:y:y:y:y/64 dev wlan0 noprefixroute
+  # ip route add x:x:x:x::/64 dev eth0 metric 256
+  # ip route add x:x:x:x::/64 dev wlan0 metric 512
+Also note that eth0 is qualified with `!' due to the difference in routing
+priority.  Finally, if you want to provide SLAAC on the downstream network
+segment(s), radvd will be necessary.
+
+
+Copying
+-------
+
+Based on OpenWRT's odhcpd, a successor to Steven Barth's 6relayd.
+Licence: GPL v2 <https://www.gnu.org/licenses/gpl-2.0.html>.
+

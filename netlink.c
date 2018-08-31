@@ -20,7 +20,7 @@
 #include <netlink/msg.h>
 #include <arpa/inet.h>
 
-#include "odhcpd.h"
+#include "6brd.h"
 
 struct event_socket {
 	struct odhcpd_event ev;

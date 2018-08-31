@@ -26,7 +26,7 @@
 #include <sys/types.h>
 #include <sys/epoll.h>
 
-#include "uloop.h"
+#include "nloop.h"
 
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))

@@ -3,11 +3,11 @@ LIBS = -lnl-3
 CPPFLAGS = -D_GNU_SOURCE ${INCS}
 CFLAGS = -pipe -g -Wall -Wextra -O2
 
-odhcpd: netlink.o ndp.o odhcpd.o uloop.o ${LIBS}
+6brd: netlink.o ndp.o 6brd.o nloop.o ${LIBS}
 
 clean:
 	rm -f *.o
 
 distclean: clean
-	rm -f odhcpd
+	rm -f 6brd
 

@@ -29,8 +29,8 @@
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 
-#include "uloop.h"
-#include "odhcpd.h"
+#include "nloop.h"
+#include "6brd.h"
 
 struct config config = { .log_level = LOG_ERR };
 static int ioctl_sock;
