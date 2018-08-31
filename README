@@ -1,5 +1,5 @@
-6brd: bridge NDP between equal-prefix IPv6 segments (v0.0.1)
-============================================================
+6brd: bridge NDP between equal-prefix IPv6 network segments (v0.0.1)
+====================================================================
 
 
 "The original motivation of Aboriginal Linux was that back around 2002 Knoppix
@@ -38,9 +38,9 @@ other dedicate packages; it also uses OpenWRT's libubox and UCI system, which
 complicates the build procedure and the configuration.
 
 6brd [5] is a solution to this: it focuses on bridging NDP between equal-prefix
-IPv6 segments using the mechanism mentioned above, and leaves the unrelated
-functionalities to other software like radvd [6]; additionally, 6brd is
-extremely simple to build and use (see below).
+IPv6 network segments using the mechanism mentioned above, and leaves the
+unrelated functionalities to other software like radvd [6]; additionally, 6brd
+is extremely simple to build and use (see below).
 
 [5] <https://gitlab.com/CasperVector/6brd>.
 [6] <http://www.litech.org/radvd/>.
