@@ -24,7 +24,7 @@ upstream segment instead of the downstream segment(s).
 
 odhcpd [3] (based on 6relayd [4]) solves this by not relaying NSs and NAs by
 itself, but pinging the destination address on network segment(s) other than the
-source segment; it then watches the neighbour table for changes, sets up NDP
+source segment; it then watches the neighbour table for changes, and sets up
 entries for said address in the NDP proxy table as well as the routing table
 accordingly.
 
@@ -32,9 +32,9 @@ accordingly.
 [4] <https://github.com/sbyx/6relayd>.
 
 Unfortunately, odhcpd seems to be designed for OpenWRT in a nearly exclusive
-way: the code implements DHCPv6 (server or relay), router discovery (server or
-relay), which is largely undesirable since these are usually handled better by
-other dedicate packages; it also uses OpenWRT's libubox and UCI system, which
+way: the code also implements DHCPv6 (server or relay), router discovery (server
+or relay), which is largely undesirable since these are usually handled better
+by other dedicate packages; it also uses OpenWRT's libubox and UCI system, which
 complicates the build procedure and the configuration.
 
 6brd [5] is a solution to this: it focuses on bridging NDP between equal-prefix
