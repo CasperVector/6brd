@@ -100,7 +100,7 @@ static int scan_args (int argc, char **argv) {
 		goto argerr;
 	}
 
-	return 1;
+	return 0;
 argerr:
 	fprintf (
 		stderr,
@@ -111,13 +111,13 @@ argerr:
 		"   !:   do not learn routes for neighbours on the interface\n",
 		argv[0]
 	);
-	return 0;
+	return 1;
 }
 
 int main(int argc, char **argv)
 {
 	int i;
-	if (!scan_args (argc, argv)) return 1;
+	if ((i = scan_args (argc, argv)) != 0) return i;
 	if (getuid () != 0) {
 		fprintf (stderr, "Must be run as root!\n");
 		return 2;
