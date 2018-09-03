@@ -72,26 +72,26 @@ static int scan_args (int argc, char **argv) {
 			else if (argv[i][j] == '!') iface->learn_routes = 0;
 			else break;
 		}
-		if (j < l) {
-			iface->ifname = argv[i] + j;
-			for (j = 0; j < config.cnt; ++j) if (!strcmp (
-				interfaces[j].ifname, iface->ifname
-			)) {
-				fprintf (stderr, "Duplicate interface %s\n", iface->ifname);
-				free (interfaces);
-				return 2;
-			}
-			if ((iface->ifindex = if_nametoindex (iface->ifname)) <= 0) {
-				fprintf (
-					stderr, "Failed to get interface index for %s\n",
-					iface->ifname
-				);
-				free (interfaces);
-				return 2;
-			}
-		} else {
+		if (j >= l) {
 			free (interfaces);
 			goto argerr;
+		}
+		iface->ifname = argv[i] + j;
+
+		for (j = 0; j < config.cnt; ++j) if (!strcmp (
+			interfaces[j].ifname, iface->ifname
+		)) {
+			fprintf (stderr, "Duplicate interface %s\n", iface->ifname);
+			free (interfaces);
+			return 2;
+		}
+		if ((iface->ifindex = if_nametoindex (iface->ifname)) <= 0) {
+			fprintf (
+				stderr, "Failed to get interface index for %s\n",
+				iface->ifname
+			);
+			free (interfaces);
+			return 2;
 		}
 	}
 
