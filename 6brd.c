@@ -37,7 +37,6 @@ static int ioctl_sock;
 
 static int scan_args (int argc, char **argv) {
 	int i, j, l;
-	struct interface *tmp;
 	for (i = 1; i < argc; ++i) {
 		l = strlen (argv[i]);
 		if (!l) goto argerr;
@@ -58,21 +57,15 @@ static int scan_args (int argc, char **argv) {
 			}
 		} else break;
 	}
+	if (argc - i < 2) goto argerr;
+	if ((interfaces = calloc (argc - i, sizeof (struct interface))) == NULL) {
+		fprintf (stderr, "Failed to allocate memory for interfaces\n");
+		return 2;
+	}
 
 	for (; i < argc; ++i, ++config.cnt) {
-		struct interface *iface;
-		if ((tmp = realloc (
-			interfaces, (config.cnt + 1) * sizeof (struct interface)
-		)) == NULL) {
-			free (interfaces);
-			fprintf (stderr, "Failed to allocate memory for interfaces\n");
-			return 2;
-		} else {
-			interfaces = tmp;
-			iface = interfaces + config.cnt;
-			*iface = (struct interface) { .learn_routes = 1 };
-		}
-
+		struct interface *iface = interfaces + config.cnt;
+		iface->learn_routes = 1;
 		l = strlen (argv[i]);
 		for (j = 0; j < l; ++j) {
 			if (argv[i][j] == '~') iface->external = 1;
@@ -93,11 +86,6 @@ static int scan_args (int argc, char **argv) {
 			free (interfaces);
 			goto argerr;
 		}
-	}
-
-	if (config.cnt < 2) {
-		if (interfaces) free (interfaces);
-		goto argerr;
 	}
 
 	return 0;
