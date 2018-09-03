@@ -82,11 +82,11 @@ static int scan_args (int argc, char **argv) {
 		if (j < l) {
 			iface->ifname = argv[i] + j;
 			if ((iface->ifindex = if_nametoindex (iface->ifname)) <= 0) {
-				free (interfaces);
 				fprintf (
 					stderr, "Failed to get interface index for %s\n",
 					iface->ifname
 				);
+				free (interfaces);
 				return 2;
 			}
 		} else {
