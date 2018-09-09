@@ -55,7 +55,7 @@ It is invoked as described below:
       -f:   foreground and send log messages to stderr
       -v:   increase verbosity by 1, at most 2 increments
        ~:   only proxy DAD messages for the specified interface
-       !:   don't learn routes for neighbours on the interface
+       !:   do not learn routes for neighbours on the interface
 
 For instance, if eth0 (y:y:y:y:z:z:z:z/64) is connected to the IPv6-enabled
 upstream subnet, and you want to enable IPv6 on the wlan0 subnet, you can
