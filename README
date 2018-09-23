@@ -34,8 +34,8 @@ accordingly.
 Unfortunately, odhcpd seems to be designed for OpenWRT in a nearly exclusive
 way: the code also implements DHCPv6 (server or relay), router discovery (server
 or relay), which is largely undesirable since these are usually handled better
-by other dedicate packages; it also uses OpenWRT's libubox and UCI system, which
-complicates the build procedure and the configuration.
+by other dedicated packages; it also uses OpenWRT's libubox and UCI system,
+which complicates the build procedure and the configuration.
 
 6brd [5] is a solution to this: it focuses on bridging NDP between equal-prefix
 IPv6 network segments using the mechanism mentioned above, and leaves the
