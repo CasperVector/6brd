@@ -42,7 +42,7 @@ IPv6 network segments using the mechanism mentioned above, and leaves the
 unrelated functionalities to other software like radvd [6]; additionally, 6brd
 is extremely simple to build and use (see below).
 
-[5] <https://gitlab.com/CasperVector/6brd>.
+[5] <https://gitea.com/CasperVector/6brd>.
 [6] <http://www.litech.org/radvd/>.
 
 
