@@ -53,7 +53,9 @@ struct config {
 	bool foreground;
 	int log_level;
 	int cnt;
-} config;
+};
+
+extern struct config config;
 
 struct interface {
 	int ifindex;
@@ -61,7 +63,9 @@ struct interface {
 	int learn_routes;
 	int external;
 	struct odhcpd_event ndp_event;
-} *interfaces;
+};
+
+extern struct interface *interfaces;
 
 // Exported main functions
 int odhcpd_register(struct odhcpd_event *event);

@@ -33,6 +33,7 @@
 #include "6brd.h"
 
 struct config config = { .log_level = LOG_ERR };
+struct interface *interfaces;
 static int ioctl_sock;
 
 static int scan_args (int argc, char **argv) {
